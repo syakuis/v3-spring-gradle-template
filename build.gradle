@@ -1,0 +1,157 @@
+buildscript {
+    ext {
+        springBootVersion = "3.0.2"
+        springCloudVersion = "2022.0.1"
+        lombokVersion = '1.18.24'
+        mapStructVersion = '1.5.2.Final'
+        mapStructExtensionsVersion = '0.1.1'
+        lombokMapStructVersion = '0.2.0'
+
+        restDocsVersion = '3.0.0'
+        snippetsDir = file("$buildDir/generated-snippets")
+
+        querydslVersion = '5.0.0'
+
+        // 호환성 문제로 1버전을 유지한다.
+        h2Version = "1.4.200"
+    }
+
+    repositories {
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath "org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}"
+        classpath "io.spring.gradle:dependency-management-plugin:1.0.8.RELEASE"
+        classpath "org.asciidoctor:asciidoctor-gradle-jvm:3.3.2"
+        classpath "gradle.plugin.com.google.gradle:osdetector-gradle-plugin:1.7.2"
+    }
+}
+
+apply plugin: "java"
+apply plugin: "application"
+apply plugin: "org.springframework.boot"
+apply plugin: "io.spring.dependency-management"
+apply plugin: "org.asciidoctor.jvm.convert"
+apply plugin: "com.google.osdetector"
+
+wrapper {
+    gradleVersion = "7.6"
+}
+
+group = "io.github.syakuis"
+version = "1.0.0-SNAPSHOT"
+
+sourceCompatibility = JavaVersion.VERSION_17
+targetCompatibility = JavaVersion.VERSION_17
+
+compileJava.options.encoding = 'UTF-8'
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    implementation.exclude module: "spring-boot-starter-tomcat"
+    querydsl.extendsFrom compileClasspath
+    asciidoctorExtensions
+}
+
+processResources {
+    filesMatching('*.yml') {
+        expand(project.properties)
+    }
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+    }
+}
+
+dependencies {
+    if (osdetector.arch.equals("aarch_64")) {
+        implementation "io.netty:netty-resolver-dns-native-macos:4.1.79.Final:osx-aarch_64"
+    }
+
+    implementation 'org.apache.commons:commons-lang3:3.12.0'
+    implementation 'commons-io:commons-io:2.11.0'
+
+    implementation "org.mapstruct:mapstruct:${mapStructVersion}"
+    implementation "org.mapstruct.extensions.spring:mapstruct-spring-annotations:${mapStructExtensionsVersion}"
+
+    compileOnly "org.projectlombok:lombok:${lombokVersion}"
+    testCompileOnly "org.projectlombok:lombok:${lombokVersion}"
+
+    annotationProcessor "org.mapstruct:mapstruct-processor:${mapStructVersion}"
+    annotationProcessor "org.mapstruct.extensions.spring:mapstruct-spring-annotations:${mapStructExtensionsVersion}"
+    annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+    annotationProcessor "org.projectlombok:lombok-mapstruct-binding:${lombokMapStructVersion}"
+
+    testAnnotationProcessor "org.mapstruct:mapstruct-processor:${mapStructVersion}"
+    testAnnotationProcessor "org.mapstruct.extensions.spring:mapstruct-spring-annotations:${mapStructExtensionsVersion}"
+    testAnnotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+    testAnnotationProcessor "org.projectlombok:lombok-mapstruct-binding:${lombokMapStructVersion}"
+
+    annotationProcessor "org.springframework.boot:spring-boot-configuration-processor"
+    implementation "org.springframework.boot:spring-boot-starter-validation"
+    testImplementation "org.springframework.boot:spring-boot-starter-test"
+
+    implementation "org.springframework.boot:spring-boot-starter-web"
+    implementation "org.springframework.boot:spring-boot-starter-undertow"
+
+    asciidoctorExtensions "org.springframework.restdocs:spring-restdocs-asciidoctor:${restDocsVersion}"
+    testImplementation "org.springframework.restdocs:spring-restdocs-mockmvc:${restDocsVersion}"
+
+    implementation "org.springframework.boot:spring-boot-starter-data-jpa"
+    implementation "com.fasterxml.jackson.datatype:jackson-datatype-hibernate5-jakarta"
+    implementation "com.querydsl:querydsl-core:${querydslVersion}"
+    implementation "com.querydsl:querydsl-jpa:${querydslVersion}:jakarta"
+    annotationProcessor(
+        "jakarta.persistence:jakarta.persistence-api",
+        "jakarta.annotation:jakarta.annotation-api",
+        "com.querydsl:querydsl-apt:${dependencyManagement.importedProperties['querydsl.version']}:jakarta"
+    )
+
+    testImplementation "com.h2database:h2:${h2Version}"
+    compileOnly "com.h2database:h2:${h2Version}"
+
+    implementation 'org.mariadb.jdbc:mariadb-java-client:3.0.6'
+
+    testImplementation "org.springframework.cloud:spring-cloud-starter-contract-stub-runner"
+}
+
+asciidoctor {
+    inputs.dir snippetsDir
+    configurations 'asciidoctorExtensions'
+    dependsOn test
+}
+
+test {
+    outputs.dir snippetsDir
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+    systemProperty 'spring.profiles.active', 'test'
+}
+
+application {
+    mainClass = 'io.github.syakuis.Application'
+}
+
+bootJar {
+    enabled true
+    launchScript()
+    dependsOn asciidoctor
+    from ("${asciidoctor.outputDir}") {
+        into "BOOT-INF/classes/static/api-docs"
+    }
+}
+
+jar {
+    enabled false
+}
